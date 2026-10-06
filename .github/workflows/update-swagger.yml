@@ -27,7 +27,7 @@ jobs:
           set -euo pipefail
           # 실패(HTTP 오류·rate limit)는 여기서 멈춘다 — jq -r 은 tag_name 이 없으면 문자열 "null" 을 내 다음 스텝이
           # "null" 태그를 내려받으려 했다. -e 는 null 이면 실패한다.
-          release_tag=$(curl -fsSL https://api.github.com/repos/swagger-api/swagger-ui/releases/latest | jq -er ".tag_name")
+          release_tag=$(curl -fsSL --max-time 30 https://api.github.com/repos/swagger-api/swagger-ui/releases/latest | jq -er ".tag_name")
           echo "release_tag=$release_tag" >> $GITHUB_OUTPUT
           current_tag=$(<swagger-ui.version)
           echo "current_tag=$current_tag" >> $GITHUB_OUTPUT
@@ -39,8 +39,8 @@ jobs:
         run: |
           # Delete the dist directory and index.html
           rm -fr dist index.html
-          # Download the release
-          curl -sL -o $RELEASE_TAG https://api.github.com/repos/swagger-api/swagger-ui/tarball/$RELEASE_TAG
+          # Download the release — -f: HTTP 오류면 여기서 멈춘다(없으면 "404: Not Found" 본문을 받아 아래 tar 가 gzip 오류로 죽는다).
+          curl -fsSL --max-time 120 -o "$RELEASE_TAG" "https://api.github.com/repos/swagger-api/swagger-ui/tarball/$RELEASE_TAG"
           # Extract the dist directory
           tar -xzf $RELEASE_TAG --strip-components=1 $(tar -tzf $RELEASE_TAG | head -1 | cut -f1 -d"/")/dist
           rm $RELEASE_TAG
