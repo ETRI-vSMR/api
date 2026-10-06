@@ -8,12 +8,26 @@ jobs:
   updateSwagger:
     runs-on: [self-hosted, lan] # 되돌리기: runs-on: ubuntu-latest
     timeout-minutes: 15
+    # 수동 실행은 기본 브랜치에서만 — 다른 브랜치에서 돌리면 그 브랜치 기준 PR 이 열린다.
+    if: github.event_name == 'schedule' || github.ref == 'refs/heads/master'
+    # 저장소 기본 토큰이 write-all 이라 최소 권한으로 줄인다. create-pull-request 가 브랜치 push·PR 생성·
+    # 라벨(dependencies, automated pr — 저장소에 아직 없어 처음엔 만든다)에 쓴다.
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    concurrency:
+      group: update-swagger
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
       - name: Get Latest Swagger UI Release
         id: swagger-ui
         run: |
-          release_tag=$(curl -sL https://api.github.com/repos/swagger-api/swagger-ui/releases/latest | jq -r ".tag_name")
+          set -euo pipefail
+          # 실패(HTTP 오류·rate limit)는 여기서 멈춘다 — jq -r 은 tag_name 이 없으면 문자열 "null" 을 내 다음 스텝이
+          # "null" 태그를 내려받으려 했다. -e 는 null 이면 실패한다.
+          release_tag=$(curl -fsSL https://api.github.com/repos/swagger-api/swagger-ui/releases/latest | jq -er ".tag_name")
           echo "release_tag=$release_tag" >> $GITHUB_OUTPUT
           current_tag=$(<swagger-ui.version)
           echo "current_tag=$current_tag" >> $GITHUB_OUTPUT
@@ -38,7 +52,8 @@ jobs:
           sed -i "s|src=\"./|src=\"dist/|g" index.html
           sed -i "s|href=\"index|href=\"dist/index|g" index.html
           # Update current release
-          echo ${{ steps.swagger-ui.outputs.release_tag }} > swagger-ui.version
+          # 스텝 출력값을 셸 본문에 식으로 직접 펼치지 않는다(스크립트 주입) — 위 env 의 RELEASE_TAG 를 쓴다.
+          printf '%s\n' "$RELEASE_TAG" > swagger-ui.version
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v8
         with:
